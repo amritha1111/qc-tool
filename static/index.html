@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Content Reviewer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #fafaf8;
+      --white:        #ffffff;
+      --surface:      #f5f3fa;
+      --border:       #e5e0ef;
+      --border-mid:   #cfc5e4;
+      --border-focus: #8b5cf6;
+      --text:         #1a1a1a;
+      --text-muted:   #6f6780;
+      --accent:       #8b5cf6;
+      --accent-soft:  #f3effd;
+      --accent-light: #ede7fb;
+      --terminal-bg:  #141414;
+      --terminal-fg:  #d0d0ce;
+      --radius:       8px;
+      --radius-sm:    5px;
+      --green:        #16a34a;
+      --green-soft:   #f0fdf4;
+      --red:          #dc2626;
+    }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Helvetica Neue", Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .page-top {
+      height: 3px;
+      background: linear-gradient(90deg, #8b5cf6 0%, #a78bfa 50%, #c4b5fd 100%);
+    }
+
+    .container {
+      max-width: 1060px;
+      margin: 0 auto;
+      padding: 48px 32px 96px;
+    }
+
+    /* ── Header ── */
+    header {
+      margin-bottom: 36px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+    header::before {
+      content: "";
+      position: absolute;
+      bottom: -1px; left: 0;
+      width: 72px; height: 2px;
+      background: var(--accent); border-radius: 2px;
+    }
+    header h1 {
+      font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em;
+    }
+
+    /* ── Two-column layout ── */
+    .form-layout {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 28px;
+      align-items: start;
+    }
+
+    /* ── Left column: prompt ── */
+    .form-left { display: flex; flex-direction: column; gap: 10px; }
+
+    label {
+      display: block;
+      font-size: 11.5px; font-weight: 600;
+      letter-spacing: 0.07em; text-transform: uppercase;
+      color: var(--text-muted); margin-bottom: 7px;
+    }
+    label .note {
+      font-weight: 400; letter-spacing: 0;
+      text-transform: none; font-size: 12px;
+    }
+
+    .prompt-toolbar { display: flex; flex-direction: column; }
+    .toolbar-row {
+      display: flex; gap: 8px; align-items: center;
+    }
+    .toolbar-row select          { flex: 1; font-size: 13px; }
+    .toolbar-row input[type="text"] { flex: 1; font-size: 13px; }
+
+    .form-left textarea {
+      width: 100%;
+      min-height: 520px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--white);
+      color: var(--text);
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+      font-size: 13px; line-height: 1.65;
+      resize: vertical; outline: none;
+      transition: border-color 0.15s;
+    }
+    .form-left textarea:focus { border-color: var(--border-focus); }
+
+    /* ── Right column ── */
+    .form-right {
+      display: flex; flex-direction: column;
+      position: sticky; top: 32px;
+    }
+
+    /* Tab nav lives inside the right column */
+    .tab-nav {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    .tab-btn {
+      padding: 8px 16px;
+      background: transparent; border: none;
+      border-bottom: 2px solid transparent;
+      font: inherit; font-size: 13px; font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer; margin-bottom: -1px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .tab-inputs { display: none; flex-direction: column; gap: 16px; }
+    .tab-inputs.active { display: flex; }
+
+    .field { display: flex; flex-direction: column; }
+
+    /* ── Upload zones ── */
+    .upload-zone {
+      position: relative;
+      border: 1.5px dashed var(--border-mid);
+      border-radius: var(--radius);
+      padding: 18px 14px;
+      background: var(--white);
+      cursor: pointer; text-align: center;
+      transition: border-color 0.15s, background 0.15s;
+      user-select: none;
+    }
+    .upload-zone:hover,
+    .upload-zone.has-file {
+      border-color: var(--accent); background: var(--accent-soft);
+    }
+    .upload-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0;
+      cursor: pointer; width: 100%; height: 100%;
+    }
+    .zone-icon {
+      display: block; font-size: 18px; margin-bottom: 4px;
+      color: var(--border-mid); transition: color 0.15s;
+    }
+    .upload-zone:hover .zone-icon,
+    .upload-zone.has-file .zone-icon { color: var(--accent); }
+    .zone-filename {
+      font-size: 13px; color: var(--text-muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .upload-zone.has-file .zone-filename { color: var(--text); font-weight: 500; }
+
+    /* ── Inputs ── */
+    select,
+    input[type="text"],
+    input[type="url"] {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--white);
+      color: var(--text);
+      font: inherit; font-size: 14px;
+      outline: none; transition: border-color 0.15s;
+      appearance: none; -webkit-appearance: none;
+    }
+    select:focus, input[type="text"]:focus, input[type="url"]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(139,92,246,0.08);
+    }
+    select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 11px center;
+      padding-right: 30px;
+    }
+
+    /* ── Buttons ── */
+    .btn-primary {
+      display: block; width: 100%;
+      padding: 12px 20px;
+      background: #7c5ce6; color: #fff;
+      border: none; border-radius: var(--radius);
+      font: inherit; font-size: 14px; font-weight: 600;
+      cursor: pointer; letter-spacing: 0.01em;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn-primary:hover  { opacity: 0.84; transform: translateY(-1px); }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+
+    .btn-ghost {
+      padding: 8px 14px;
+      background: transparent; color: var(--text-muted);
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      font: inherit; font-size: 13px; cursor: pointer;
+      transition: border-color 0.15s, color 0.15s; white-space: nowrap;
+    }
+    .btn-ghost:hover { border-color: var(--border-focus); color: var(--text); }
+    .btn-ghost.danger:hover { border-color: var(--red); color: var(--red); }
+
+    .btn-secondary {
+      padding: 8px 16px;
+      background: transparent; color: var(--text);
+      border: 1.5px solid var(--border-focus); border-radius: var(--radius-sm);
+      font: inherit; font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .btn-secondary:hover { background: var(--surface); }
+
+    /* ── Credentials row ── */
+    .cred-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--white);
+    }
+    .cred-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #ccc; flex-shrink: 0; transition: background 0.2s;
+    }
+    .cred-dot.ok  { background: var(--green); }
+    .cred-dot.err { background: var(--red); }
+    .cred-label {
+      flex: 1; font-size: 13px; color: var(--text-muted);
+    }
+    .cred-label.ok  { color: var(--green); }
+    .cred-label.err { color: var(--red); }
+    /* ── Sections below form ── */
+    .divider { height: 1px; background: var(--border); margin: 36px 0 0; }
+    .section { margin-top: 32px; }
+    .section-header {
+      display: flex; align-items: center;
+      justify-content: space-between; margin-bottom: 16px;
+    }
+    .section-header h2 {
+      font-size: 13px; font-weight: 600; letter-spacing: -0.01em;
+    }
+    .status-chip { font-size: 13px; color: var(--text-muted); }
+
+    /* ── Terminal log ── */
+    .log-box {
+      background: var(--terminal-bg); color: var(--terminal-fg);
+      font-family: "SF Mono", "Fira Code", Consolas, monospace;
+      font-size: 12.5px; line-height: 1.7;
+      padding: 16px 18px; border-radius: var(--radius);
+      max-height: 240px; overflow-y: auto;
+      white-space: pre-wrap; word-break: break-all;
+    }
+
+    /* ── Progress bar ── */
+    .progress-wrap {
+      display: flex; align-items: center; gap: 12px; margin-top: 12px;
+    }
+    .progress-track {
+      flex: 1; height: 3px; background: var(--border);
+      border-radius: 2px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+      border-radius: 2px; transition: width 0.25s ease;
+    }
+    .progress-pct {
+      font-size: 12px; color: var(--text-muted);
+      min-width: 34px; text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Chapter list (batch) ── */
+    .chapter-list {
+      display: flex; flex-direction: column; gap: 6px; margin-top: 14px;
+    }
+    .chapter-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--white); font-size: 13px;
+    }
+    .ch-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green); flex-shrink: 0;
+    }
+    .ch-name  { flex: 1; font-weight: 500; }
+    .ch-count { color: var(--text-muted); font-size: 12px; }
+    .ch-score { color: var(--accent); font-size: 12px; font-weight: 600; margin-left: 8px; }
+
+    /* ── Batch result card ── */
+    .result-card {
+      padding: 20px 22px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--white);
+    }
+    .result-stats { display: flex; gap: 28px; margin-bottom: 16px; }
+    .stat { display: flex; flex-direction: column; }
+    .stat-num { font-size: 26px; font-weight: 700; color: var(--accent); line-height: 1; }
+    .stat-lbl { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+    .stat-story { font-size: 16px; font-weight: 600; color: var(--text); padding-top: 3px; }
+    .sheet-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 9px 16px;
+      background: var(--accent-soft);
+      border: 1px solid var(--border-focus);
+      border-radius: var(--radius-sm);
+      color: var(--accent);
+      text-decoration: none; font-size: 13px; font-weight: 500;
+      transition: background 0.15s;
+    }
+    .sheet-link:hover { background: var(--accent-light); }
+
+    /* ── Single-file report ── */
+    .report-body { font-size: 14.5px; line-height: 1.8; color: var(--text); }
+    .report-body h1, .report-body h2, .report-body h3 {
+      font-size: 14.5px; font-weight: 600; margin: 24px 0 8px;
+    }
+    .report-body p  { margin-bottom: 10px; }
+    .report-body ul, .report-body ol { padding-left: 22px; margin-bottom: 10px; }
+    .report-body li { margin-bottom: 4px; }
+    .report-body strong { font-weight: 600; }
+    .report-body hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+    .report-body code {
+      font-family: "SF Mono", "Fira Code", Consolas, monospace;
+      font-size: 13px; background: var(--surface); padding: 2px 6px; border-radius: 4px;
+    }
+
+    @media (max-width: 720px) {
+      .form-layout  { grid-template-columns: 1fr; }
+      .form-right   { position: static; }
+      .form-left textarea { min-height: 300px; }
+      .container    { padding: 28px 16px 64px; }
+      .result-stats { flex-wrap: wrap; gap: 16px; }
+    }
+    .login-overlay {
+      position: fixed; inset: 0; z-index: 9999;
+      background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .login-box {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 40px 36px 36px;
+      width: 360px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .login-box h1 {
+      font-size: 20px; font-weight: 600; color: var(--text); margin-bottom: 6px;
+    }
+    .login-box input[type="password"] {
+      width: 100%; padding: 10px 14px; font-size: 15px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      outline: none; background: var(--bg); color: var(--text);
+    }
+    .login-box input[type="password"]:focus {
+      border-color: var(--border-focus);
+    }
+    .login-error {
+      font-size: 13px; color: var(--red);
+      min-height: 0; display: none;
+    }
+    .login-error.visible { display: block; }
+  </style>
+</head>
+<body>
+  <div id="login-overlay" class="login-overlay">
+    <div class="login-box">
+      <h1>Content Reviewer</h1>
+      <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" />
+      <div class="login-error" id="login-error"></div>
+      <button type="button" class="btn-primary" id="login-btn">Sign in</button>
+    </div>
+  </div>
+  <div id="app-root" style="display:none">
+  <div class="page-top"></div>
+  <div class="container">
+
+    <header>
+      <h1>Audio Quality Control</h1>
+    </header>
+
+    <!-- ── Main two-column layout ── -->
+    <div class="form-layout">
+
+      <!-- Left: shared prompt -->
+      <div class="form-left">
+        <label>
+          Prompt
+          <span class="note"> {acoustic_report} and {script_text} are substituted at runtime</span>
+        </label>
+        <div class="prompt-toolbar">
+          <div class="toolbar-row" id="toolbar-normal">
+            <select id="prompt-preset" title="Select a saved prompt"></select>
+            <button type="button" class="btn-ghost" id="update-prompt-btn">Save Changes</button>
+            <button type="button" class="btn-ghost" id="save-prompt-btn">New Agent</button>
+            <button type="button" class="btn-ghost danger" id="delete-prompt-btn">Delete</button>
+          </div>
+          <div class="toolbar-row" id="toolbar-saving" style="display:none">
+            <input type="text" id="prompt-save-name" placeholder="Agent name..." autocomplete="off" />
+            <button type="button" class="btn-ghost" id="confirm-save-btn">Confirm</button>
+            <button type="button" class="btn-ghost" id="cancel-save-btn">Cancel</button>
+          </div>
+        </div>
+        <textarea id="prompt-text" spellcheck="false"></textarea>
+      </div>
+
+      <!-- Right: tab nav + tab-specific inputs -->
+      <div class="form-right">
+        <div class="tab-nav">
+          <button class="tab-btn active" data-tab="batch">Batch Review</button>
+          <button class="tab-btn"        data-tab="single">Single File</button>
+        </div>
+
+        <!-- ── Batch inputs ── -->
+        <div class="tab-inputs active" id="inputs-batch">
+
+          <div class="field">
+            <label>Service Account</label>
+            <div class="cred-row">
+              <div class="cred-dot" id="cred-dot"></div>
+              <span class="cred-label" id="cred-label">Checking...</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Drive Folder URL <span class="note">— audio files</span></label>
+            <input type="url" id="folder-url"
+              placeholder="https://drive.google.com/drive/folders/..." />
+          </div>
+
+          <div class="field">
+            <label>Google Doc URL <span class="note">— story script</span></label>
+            <input type="url" id="doc-url"
+              placeholder="https://docs.google.com/document/d/..." />
+          </div>
+
+          <div class="field">
+            <label>Issues Sheet URL</label>
+            <input type="url" id="sheet-url"
+              value="https://docs.google.com/spreadsheets/d/1IbSqSw8WTOfyiy912HHrb1IuAEYpIIKar6L41-eIikM/edit?usp=sharing" />
+          </div>
+
+          <div class="field">
+            <label>Scoring Sheet URL</label>
+            <input type="url" id="scoring-sheet-url"
+              value="https://docs.google.com/spreadsheets/d/1VpZa1djpJfYMRDpFV0SE8vnUfySyxGeHnuQ693RM_cw/edit?usp=sharing" />
+          </div>
+
+          <div class="field">
+            <label>Story Name <span class="note">— optional, auto-detected</span></label>
+            <input type="text" id="story-name" placeholder="e.g. BT-AN02-EPIC-ALADIN" />
+          </div>
+
+          <div class="field">
+            <label>Language</label>
+            <select id="batch-language">
+              <option value="english">English</option>
+              <option value="hindi">Hindi</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Model</label>
+            <select id="batch-model">
+              <option value="gemini-2.5-flash" selected>gemini-2.5-flash</option>
+              <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+              <option value="gemini-3.5-flash">gemini-3.5-flash</option>
+            </select>
+          </div>
+
+          <button type="button" class="btn-primary" id="batch-run-btn">Run Batch</button>
+        </div>
+
+        <!-- ── Single-file inputs ── -->
+        <div class="tab-inputs" id="inputs-single">
+
+          <div class="field">
+            <label>Script</label>
+            <div class="upload-zone" id="script-zone">
+              <input type="file" id="script-file" accept=".md" />
+              <span class="zone-icon">&#8593;</span>
+              <span class="zone-filename" id="script-name">Click to select .md file</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Audio</label>
+            <div class="upload-zone" id="audio-zone">
+              <input type="file" id="audio-file"
+                accept=".mp3,.wav,.flac,.ogg,.m4a,.aac,.opus,.webm,.mp4" />
+              <span class="zone-icon">&#8593;</span>
+              <span class="zone-filename" id="audio-name">Click to select audio file</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Language</label>
+            <select id="single-language">
+              <option value="english">English</option>
+              <option value="hindi">Hindi</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Model</label>
+            <select id="single-model">
+              <option value="gemini-2.5-flash" selected>gemini-2.5-flash</option>
+              <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+              <option value="gemini-3.5-flash">gemini-3.5-flash</option>
+            </select>
+          </div>
+
+          <button type="button" class="btn-primary" id="run-btn">Run Analysis</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Batch progress + result ── -->
+    <div class="divider"  id="batch-divider"  style="display:none"></div>
+    <section class="section" id="batch-progress-sec" style="display:none">
+      <div class="section-header">
+        <h2>Progress</h2>
+        <span class="status-chip" id="batch-status"></span>
+      </div>
+      <div class="log-box" id="batch-log"></div>
+      <div class="progress-wrap" id="batch-progress-wrap" style="display:none">
+        <div class="progress-track">
+          <div class="progress-fill" id="batch-fill"></div>
+        </div>
+        <span class="progress-pct" id="batch-pct">0%</span>
+      </div>
+      <div class="chapter-list" id="chapter-list"></div>
+    </section>
+
+    <div class="divider" id="batch-result-divider" style="display:none"></div>
+    <section class="section" id="batch-result-sec" style="display:none">
+      <div class="section-header"><h2>Batch Complete</h2></div>
+      <div class="result-card">
+        <div class="result-stats">
+          <div class="stat">
+            <span class="stat-num" id="res-chapters">—</span>
+            <span class="stat-lbl">Chapters</span>
+          </div>
+          <div class="stat">
+            <span class="stat-num" id="res-issues">—</span>
+            <span class="stat-lbl">Issues logged</span>
+          </div>
+          <div class="stat">
+            <span class="stat-story" id="res-story">—</span>
+            <span class="stat-lbl">Story</span>
+          </div>
+        </div>
+        <a class="sheet-link" id="sheet-link" href="#" target="_blank">
+          Open Google Sheet &#8599;
+        </a>
+      </div>
+    </section>
+
+    <!-- ── Single-file progress + report ── -->
+    <div class="divider" id="single-divider" style="display:none"></div>
+    <section class="section" id="single-progress-sec" style="display:none">
+      <div class="section-header">
+        <h2>Progress</h2>
+        <span class="status-chip" id="single-status"></span>
+      </div>
+      <div class="log-box" id="single-log"></div>
+      <div class="progress-wrap" id="single-progress-wrap" style="display:none">
+        <div class="progress-track">
+          <div class="progress-fill" id="single-fill"></div>
+        </div>
+        <span class="progress-pct" id="single-pct">0%</span>
+      </div>
+    </section>
+
+    <div class="divider" id="report-divider" style="display:none"></div>
+    <section class="section" id="report-sec" style="display:none">
+      <div class="section-header">
+        <h2>Review Report</h2>
+        <button class="btn-secondary" id="download-btn">Download .md</button>
+      </div>
+      <div class="report-body" id="report-body"></div>
+    </section>
+
+  </div>
+  </div><!-- /app-root -->
+
+  <script src="https://unpkg.com/marked@9/marked.min.js"></script>
+  <script src="https://unpkg.com/dompurify@3/dist/purify.min.js"></script>
+  <script>
+
+  // ── Tab switching ──────────────────────────────────────────────────────────
+
+  function clearBatchResults() {
+    ['batch-divider','batch-progress-sec','batch-result-divider','batch-result-sec']
+      .forEach(id => { document.getElementById(id).style.display = 'none'; });
+    document.getElementById('batch-log').textContent = '';
+    document.getElementById('chapter-list').innerHTML = '';
+    document.getElementById('batch-status').textContent = '';
+    if (typeof batchEs !== 'undefined' && batchEs) { batchEs.close(); batchEs = null; }
+  }
+
+  function clearSingleResults() {
+    ['single-divider','single-progress-sec','report-divider','report-sec']
+      .forEach(id => { document.getElementById(id).style.display = 'none'; });
+    document.getElementById('single-log').textContent = '';
+    document.getElementById('single-status').textContent = '';
+    document.getElementById('report-body').innerHTML = '';
+    reportText = '';
+    if (typeof singleEs !== 'undefined' && singleEs) { singleEs.close(); singleEs = null; }
+  }
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-inputs').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('inputs-' + btn.dataset.tab).classList.add('active');
+      if (btn.dataset.tab === 'batch') clearSingleResults();
+      else clearBatchResults();
+    });
+  });
+
+  // ── Prompt store ──────────────────────────────────────────────────────────
+
+  let _prompts = {};
+
+  function refreshPresetSelect(activeName) {
+    const sel   = document.getElementById('prompt-preset');
+    const names = Object.keys(_prompts).sort();
+    sel.innerHTML = '';
+    if (!names.length) {
+      const opt = document.createElement('option');
+      opt.textContent = 'No saved prompts'; opt.disabled = true;
+      sel.appendChild(opt); return;
+    }
+    names.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name; opt.textContent = name;
+      if (name === activeName) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }
+
+  async function loadPrompts() {
+    const resp = await fetch('/prompts');
+    _prompts   = await resp.json();
+    const first = Object.keys(_prompts).sort()[0] || '';
+    refreshPresetSelect(first);
+    if (first) document.getElementById('prompt-text').value = _prompts[first];
+    _updateToolbarState(first);
+  }
+  loadPrompts();
+
+  function _updateToolbarState(name) {
+    const isDefault = name === 'Default';
+    document.getElementById('update-prompt-btn').disabled = isDefault;
+    document.getElementById('delete-prompt-btn').disabled = isDefault;
+  }
+
+  document.getElementById('prompt-preset').addEventListener('change', e => {
+    const name = e.target.value;
+    if (_prompts[name] !== undefined)
+      document.getElementById('prompt-text').value = _prompts[name];
+    _updateToolbarState(name);
+  });
+
+  let _preSavePromptText = '';
+  function enterSaveMode() {
+    _preSavePromptText = document.getElementById('prompt-text').value;
+    document.getElementById('toolbar-normal').style.display = 'none';
+    document.getElementById('toolbar-saving').style.display = 'flex';
+    document.getElementById('prompt-save-name').value = '';
+    document.getElementById('prompt-text').value = '';
+    document.getElementById('prompt-save-name').focus();
+  }
+  function exitSaveMode() {
+    document.getElementById('toolbar-saving').style.display = 'none';
+    document.getElementById('toolbar-normal').style.display = 'flex';
+    document.getElementById('prompt-text').value = _preSavePromptText;
+  }
+
+  document.getElementById('update-prompt-btn').addEventListener('click', async () => {
+    const name = document.getElementById('prompt-preset').value;
+    if (!name || name === 'Default') return;
+    const content = document.getElementById('prompt-text').value;
+    const fd = new FormData();
+    fd.append('name', name); fd.append('content', content);
+    await fetch('/prompts', { method: 'POST', body: fd });
+    _prompts[name] = content;
+    const btn = document.getElementById('update-prompt-btn');
+    btn.textContent = 'Saved';
+    setTimeout(() => { btn.textContent = 'Save Changes'; }, 1500);
+  });
+
+  document.getElementById('save-prompt-btn').addEventListener('click', enterSaveMode);
+  document.getElementById('cancel-save-btn').addEventListener('click', exitSaveMode);
+  document.getElementById('prompt-save-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter')  document.getElementById('confirm-save-btn').click();
+    if (e.key === 'Escape') exitSaveMode();
+  });
+
+  document.getElementById('confirm-save-btn').addEventListener('click', async () => {
+    const name = document.getElementById('prompt-save-name').value.trim();
+    if (!name) { document.getElementById('prompt-save-name').focus(); return; }
+    const content = document.getElementById('prompt-text').value;
+    const fd = new FormData();
+    fd.append('name', name); fd.append('content', content);
+    await fetch('/prompts', { method: 'POST', body: fd });
+    _prompts[name] = content;
+    refreshPresetSelect(name);
+    _updateToolbarState(name);
+    _preSavePromptText = content;
+    exitSaveMode();
+  });
+
+  document.getElementById('delete-prompt-btn').addEventListener('click', async () => {
+    const name = document.getElementById('prompt-preset').value;
+    if (!name || name === 'Default' || _prompts[name] === undefined) return;
+    if (!confirm(`Delete agent "${name}"?`)) return;
+    await fetch('/prompts/' + encodeURIComponent(name), { method: 'DELETE' });
+    delete _prompts[name];
+    const next = Object.keys(_prompts).sort()[0] || '';
+    refreshPresetSelect(next);
+    _updateToolbarState(next);
+    document.getElementById('prompt-text').value = next ? _prompts[next] : '';
+  });
+
+  // ── Credentials status ─────────────────────────────────────────────────────
+
+  async function checkCredentials() {
+    const dot   = document.getElementById('cred-dot');
+    const label = document.getElementById('cred-label');
+    try {
+      const data = await fetch('/credentials/status').then(r => r.json());
+      if (data.configured) {
+        dot.className   = 'cred-dot ok';
+        label.className = 'cred-label ok';
+        label.textContent = 'Configured';
+      } else {
+        dot.className   = 'cred-dot err';
+        label.className = 'cred-label err';
+        label.textContent = 'Not configured';
+      }
+    } catch {
+      dot.className = 'cred-dot err';
+      label.textContent = 'Could not check';
+    }
+  }
+  checkCredentials();
+
+
+  // ── Upload zone helpers ────────────────────────────────────────────────────
+
+  function bindUploadZone(inputId, nameId, zoneId, placeholder) {
+    const input  = document.getElementById(inputId);
+    const nameEl = document.getElementById(nameId);
+    const zone   = document.getElementById(zoneId);
+    input.addEventListener('change', () => {
+      if (input.files[0]) {
+        nameEl.textContent = input.files[0].name;
+        zone.classList.add('has-file');
+      } else {
+        nameEl.textContent = placeholder;
+        zone.classList.remove('has-file');
+      }
+    });
+  }
+  bindUploadZone('script-file', 'script-name', 'script-zone', 'Click to select .md file');
+  bindUploadZone('audio-file',  'audio-name',  'audio-zone',  'Click to select audio file');
+
+  // ── Log helper ────────────────────────────────────────────────────────────
+
+  function appendLog(boxId, msg) {
+    const box = document.getElementById(boxId);
+    box.textContent += msg + '\n';
+    box.scrollTop = box.scrollHeight;
+  }
+
+  // ── Batch run ─────────────────────────────────────────────────────────────
+
+  let batchEs = null;
+  let _activeJobId = null;
+
+  window.addEventListener('pagehide', () => {
+    if (_activeJobId) navigator.sendBeacon('/jobs/' + _activeJobId + '/cancel');
+  });
+
+  document.getElementById('batch-run-btn').addEventListener('click', async () => {
+    const folderUrl = document.getElementById('folder-url').value.trim();
+    const docUrl    = document.getElementById('doc-url').value.trim();
+    const sheetUrl        = document.getElementById('sheet-url').value.trim();
+    const scoringSheetUrl = document.getElementById('scoring-sheet-url').value.trim();
+
+    if (!folderUrl || !docUrl || !sheetUrl || !scoringSheetUrl) {
+      alert('Please fill in all URL fields.');
+      return;
+    }
+
+    if (batchEs) { batchEs.close(); batchEs = null; }
+
+    const batchBtn = document.getElementById('batch-run-btn');
+    batchBtn.disabled = true;
+    batchBtn.textContent = 'Running...';
+
+    document.getElementById('batch-log').textContent    = '';
+    document.getElementById('batch-fill').style.width   = '0%';
+    document.getElementById('batch-pct').textContent    = '0%';
+    document.getElementById('batch-progress-wrap').style.display = 'none';
+    document.getElementById('batch-result-divider').style.display = 'none';
+    document.getElementById('batch-result-sec').style.display = 'none';
+    document.getElementById('batch-divider').style.display = 'block';
+    document.getElementById('batch-progress-sec').style.display = 'block';
+    document.getElementById('chapter-list').innerHTML = '';
+    document.getElementById('batch-status').textContent = 'Submitting...';
+
+    const fd = new FormData();
+    fd.append('folder_url',        folderUrl);
+    fd.append('doc_url',           docUrl);
+    fd.append('sheet_url',         sheetUrl);
+    fd.append('scoring_sheet_url', scoringSheetUrl);
+    fd.append('story_name', document.getElementById('story-name').value.trim());
+    fd.append('model',      document.getElementById('batch-model').value);
+    fd.append('language',   document.getElementById('batch-language').value);
+    fd.append('prompt',     document.getElementById('prompt-text').value);
+
+    let jobId;
+    try {
+      const resp = await fetch('/batch/upload', { method: 'POST', body: fd });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: 'Submission failed' }));
+        throw new Error(err.detail || 'Submission failed');
+      }
+      jobId = (await resp.json()).job_id;
+    } catch (err) {
+      appendLog('batch-log', 'Error: ' + err.message);
+      document.getElementById('batch-status').textContent = 'Failed.';
+      batchBtn.disabled = false;
+      batchBtn.textContent = 'Run Batch';
+      return;
+    }
+
+    document.getElementById('batch-status').textContent = 'Analyzing...';
+    _activeJobId = jobId;
+    batchEs = new EventSource('/batch/stream/' + jobId);
+
+    batchEs.addEventListener('log', e => {
+      appendLog('batch-log', JSON.parse(e.data).data);
+    });
+
+    batchEs.addEventListener('progress', e => {
+      const pct = Math.round(JSON.parse(e.data).data * 100);
+      document.getElementById('batch-progress-wrap').style.display = 'flex';
+      document.getElementById('batch-fill').style.width = pct + '%';
+      document.getElementById('batch-pct').textContent  = pct + '%';
+    });
+
+    batchEs.addEventListener('chapter_done', e => {
+      const d    = JSON.parse(e.data).data;
+      const item = document.createElement('div');
+      item.className = 'chapter-item';
+      item.innerHTML =
+        `<div class="ch-dot"></div>` +
+        `<span class="ch-name">${d.chapter}</span>` +
+        `<span class="ch-count">${d.issues} issue${d.issues !== 1 ? 's' : ''}</span>` +
+        `<span class="ch-score">Score: ${d.score}</span>`;
+      document.getElementById('chapter-list').appendChild(item);
+    });
+
+    batchEs.addEventListener('result', e => {
+      const d = JSON.parse(e.data).data;
+      document.getElementById('res-chapters').textContent = d.total_chapters;
+      document.getElementById('res-issues').textContent   = d.total_issues;
+      document.getElementById('res-story').textContent    = d.story;
+      document.getElementById('sheet-link').href          = d.sheet_url;
+      document.getElementById('batch-result-divider').style.display = 'block';
+      document.getElementById('batch-result-sec').style.display     = 'block';
+      document.getElementById('batch-result-sec').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    batchEs.addEventListener('apperror', e => {
+      appendLog('batch-log', 'ERROR: ' + JSON.parse(e.data).data);
+    });
+
+    batchEs.addEventListener('done', () => {
+      batchEs.close(); batchEs = null;
+      _activeJobId = null;
+      const done = document.getElementById('batch-result-sec').style.display === 'block';
+      document.getElementById('batch-status').textContent = done ? 'Complete.' : 'Failed.';
+      batchBtn.disabled = false;
+      batchBtn.textContent = 'Run Batch';
+    });
+
+    batchEs.onerror = () => {
+      appendLog('batch-log', 'Connection lost.');
+      batchEs.close(); batchEs = null;
+      document.getElementById('batch-status').textContent = 'Connection error.';
+      batchBtn.disabled = false;
+      batchBtn.textContent = 'Run Batch';
+    };
+  });
+
+  // ── Single-file run ───────────────────────────────────────────────────────
+
+  let singleEs  = null;
+  let reportText = '';
+
+  document.getElementById('run-btn').addEventListener('click', async () => {
+    const scriptFile = document.getElementById('script-file').files[0];
+    const audioFile  = document.getElementById('audio-file').files[0];
+    if (!scriptFile || !audioFile) {
+      alert('Please select both a script (.md) and an audio file.');
+      return;
+    }
+
+    if (singleEs) { singleEs.close(); singleEs = null; }
+
+    const runBtn = document.getElementById('run-btn');
+    runBtn.disabled = true;
+    runBtn.textContent = 'Running...';
+
+    document.getElementById('single-log').textContent    = '';
+    document.getElementById('single-fill').style.width   = '0%';
+    document.getElementById('single-pct').textContent    = '0%';
+    document.getElementById('single-progress-wrap').style.display = 'none';
+    document.getElementById('report-divider').style.display = 'none';
+    document.getElementById('report-sec').style.display     = 'none';
+    document.getElementById('single-divider').style.display = 'block';
+    document.getElementById('single-progress-sec').style.display = 'block';
+    document.getElementById('single-status').textContent = 'Uploading...';
+    reportText = '';
+
+    const fd = new FormData();
+    fd.append('script',    scriptFile);
+    fd.append('audio',     audioFile);
+    fd.append('model',     document.getElementById('single-model').value);
+    fd.append('language',  document.getElementById('single-language').value);
+    fd.append('prompt',    document.getElementById('prompt-text').value);
+    fd.append('api_key', '');
+
+    let jobId;
+    try {
+      const resp = await fetch('/upload', { method: 'POST', body: fd });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: 'Upload failed' }));
+        throw new Error(err.detail || 'Upload failed');
+      }
+      jobId = (await resp.json()).job_id;
+    } catch (err) {
+      appendLog('single-log', 'Upload error: ' + err.message);
+      document.getElementById('single-status').textContent = 'Failed.';
+      runBtn.disabled = false;
+      runBtn.textContent = 'Run Analysis';
+      return;
+    }
+
+    document.getElementById('single-status').textContent = 'Analyzing...';
+    _activeJobId = jobId;
+    singleEs = new EventSource('/stream/' + jobId);
+
+    singleEs.addEventListener('log', e => {
+      appendLog('single-log', JSON.parse(e.data).data);
+    });
+
+    singleEs.addEventListener('progress', e => {
+      const pct = Math.round(JSON.parse(e.data).data * 100);
+      document.getElementById('single-progress-wrap').style.display = 'flex';
+      document.getElementById('single-fill').style.width = pct + '%';
+      document.getElementById('single-pct').textContent  = pct + '%';
+    });
+
+    singleEs.addEventListener('result', e => {
+      reportText = JSON.parse(e.data).data;
+      document.getElementById('report-divider').style.display = 'block';
+      document.getElementById('report-sec').style.display     = 'block';
+      document.getElementById('report-body').innerHTML =
+        DOMPurify.sanitize(marked.parse(reportText));
+      document.getElementById('report-sec').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    singleEs.addEventListener('apperror', e => {
+      appendLog('single-log', 'ERROR: ' + JSON.parse(e.data).data);
+    });
+
+    singleEs.addEventListener('done', () => {
+      singleEs.close(); singleEs = null;
+      _activeJobId = null;
+      document.getElementById('single-status').textContent = reportText ? 'Complete.' : 'Failed.';
+      runBtn.disabled = false;
+      runBtn.textContent = 'Run Analysis';
+    });
+
+    singleEs.onerror = () => {
+      appendLog('single-log', 'Connection lost.');
+      singleEs.close(); singleEs = null;
+      document.getElementById('single-status').textContent = 'Connection error.';
+      runBtn.disabled = false;
+      runBtn.textContent = 'Run Analysis';
+    };
+  });
+
+  document.getElementById('download-btn').addEventListener('click', () => {
+    if (!reportText) return;
+    const blob = new Blob([reportText], { type: 'text/markdown' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'review_report.md';
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  });
+
+  </script>
+  <script>
+    function showApp() {
+      document.getElementById('login-overlay').style.display = 'none';
+      document.getElementById('app-root').style.display = '';
+    }
+    async function tryLogin() {
+      const pw  = document.getElementById('login-password').value;
+      const fd  = new FormData();
+      fd.append('password', pw);
+      const resp = await fetch('/auth/login', { method: 'POST', body: fd });
+      if (resp.ok) {
+        const { token } = await resp.json();
+        localStorage.setItem('auth_token', token);
+        showApp();
+      } else {
+        const err = document.getElementById('login-error');
+        err.textContent = 'Incorrect password.';
+        err.classList.add('visible');
+        document.getElementById('login-password').value = '';
+        document.getElementById('login-password').focus();
+      }
+    }
+    document.getElementById('login-btn').addEventListener('click', tryLogin);
+    document.getElementById('login-password').addEventListener('keydown', e => {
+      if (e.key === 'Enter') tryLogin();
+    });
+    (async () => {
+      const token = localStorage.getItem('auth_token') || '';
+      const resp  = await fetch('/auth/check?token=' + encodeURIComponent(token));
+      const { valid } = await resp.json();
+      if (valid) {
+        showApp();
+      } else {
+        localStorage.removeItem('auth_token');
+        setTimeout(() => document.getElementById('login-password').focus(), 50);
+      }
+    })();
+  </script>
+</body>
+</html>
