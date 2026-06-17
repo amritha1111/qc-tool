@@ -12,6 +12,7 @@ Then open http://localhost:8000
 
 import asyncio
 import json
+import multiprocessing as _mp
 import os
 import queue as sync_queue
 import re
@@ -178,7 +179,45 @@ def fmt_ts(seconds: float) -> str:
     return f"[{int(seconds // 60):02d}:{int(seconds % 60):02d}]"
 
 
-def extract_quality_features(audio_path: str, log_fn, progress_fn) -> str:
+def _acoustic_worker(audio_path: str, result_queue: "_mp.Queue") -> None:
+    """Subprocess target — runs librosa/numba in its own GIL so the event loop stays free."""
+    try:
+        def _noop(*_): pass
+        result = extract_quality_features(audio_path, _noop, _noop)
+        result_queue.put(("ok", result))
+    except Exception as exc:
+        result_queue.put(("error", str(exc)))
+
+
+def extract_quality_features(audio_path: str, log_fn, progress_fn, stop: threading.Event | None = None) -> str:
+    if stop is not None:
+        # librosa.pyin uses numba which holds the GIL and freezes the event loop.
+        # Running in a subprocess gives it an independent GIL.
+        ctx = _mp.get_context("spawn")
+        result_q = ctx.Queue()
+        proc = ctx.Process(target=_acoustic_worker, args=(audio_path, result_q))
+        proc.start()
+        log_fn("Running acoustic analysis...")
+        while proc.is_alive():
+            if stop.is_set():
+                proc.terminate()
+                proc.join(timeout=3)
+                if proc.is_alive():
+                    proc.kill()
+                return ""
+            time.sleep(0.5)
+        proc.join()
+        try:
+            tag, data = result_q.get_nowait()
+        except sync_queue.Empty:
+            raise RuntimeError("Acoustic subprocess returned no result.")
+        if tag == "ok":
+            return data
+        raise RuntimeError(data)
+
+    def _stopped() -> bool:
+        return stop is not None and stop.is_set()
+
     log_fn("Loading audio file...")
     y, sr = librosa.load(audio_path, sr=16000, mono=True)
     total_duration = librosa.get_duration(y=y, sr=sr)
@@ -194,9 +233,13 @@ def extract_quality_features(audio_path: str, log_fn, progress_fn) -> str:
         hop_length=hop_length,
         frame_length=1024,
     )
+    if _stopped():
+        return ""
 
     log_fn("Separating harmonic / noise components...")
     y_harmonic, y_noise = librosa.effects.hpss(y)
+    if _stopped():
+        return ""
 
     log_fn("Computing spectral and RMS features...")
     D = np.abs(librosa.stft(y, hop_length=hop_length))
@@ -230,6 +273,8 @@ def extract_quality_features(audio_path: str, log_fn, progress_fn) -> str:
 
     log_fn(f"Scanning {n_segments} segments...")
     for i in range(n_segments):
+        if _stopped():
+            return ""
         frac = (i + 1) / n_segments
         pct  = int(frac * 100)
         if pct != last_pct_sent:
@@ -358,7 +403,7 @@ def run_analysis(job: dict, q: sync_queue.Queue) -> None:
 
         script_text = open(script_path, encoding="utf-8").read()
         if stop.is_set(): return
-        acoustic_report = extract_quality_features(audio_path, log, progress)
+        acoustic_report = extract_quality_features(audio_path, log, progress, stop)
         if stop.is_set(): return
         audio_ref = upload_to_gemini(audio_path, log, client)
 
@@ -639,7 +684,7 @@ def run_batch_analysis(job: dict, q: sync_queue.Queue) -> None:
                         progress(off + frac * sc)
                     return _p
 
-                acoustic_report = extract_quality_features(audio_path, log, make_prog())
+                acoustic_report = extract_quality_features(audio_path, log, make_prog(), stop)
                 if stop.is_set():
                     log("Client disconnected — stopping batch.")
                     break
