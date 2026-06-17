@@ -76,16 +76,13 @@ Output Format:
 - Use precise timestamps [MM:SS] on every bullet.
 - Be specific: quote the script line, describe the flaw, state the timestamp.
 - Only write "None" if you have completed all required checks for that parameter and found zero issues. If uncertain, flag it.
-- If you determine mid-analysis that something is not a real issue (e.g. a punctuation difference), do not include it at all. Never output a bullet followed by "re-evaluating", "false flag", or "this is a punctuation difference" — simply omit it.
 
 ---
 
 **1. Kid Safe Content**
-Flag only content that genuinely crosses the line for a young audience — not normal adventure story tension.
-- Flag truly age-inappropriate content: adult themes, offensive language, or graphic violence.
-- Flag vocal delivery that would genuinely frighten a young child beyond what a typical Disney/Pixar-style adventure contains.
-- Do NOT flag: villain menace, protagonists showing fear or determination, battle speeches, or any dramatic tone that is standard in children's adventure stories. These are expected and intentional.
-- The bar is high: if the same scene could appear in a mainstream children's animated series without concern, do not flag it.
+Strictly assess every moment for age-appropriateness. This is a zero-tolerance check.
+- Flag any word, phrase, or theme that is unsafe or age-inappropriate for young children — including violence, fear, adult concepts, or offensive language, however subtle.
+- When in doubt, flag it.
 
 ---
 
@@ -96,9 +93,6 @@ NOT issues (do not flag these):
 - Punctuation differences: ellipses (…) vs periods (.), commas, dashes, em-dashes, quotation marks around words — these are not spoken.
 - Contractions vs expanded form: "we're" / "we are", "it's" / "it is", "they're" / "they are", "I'm" / "I am", "don't" / "do not" — these mean the same thing.
 - Capitalisation differences.
-- Script section headers or scene labels (e.g. "TEST 1 – T-MAX vs RUTHLESS LEADER", "SCENE 5 – FINAL CLUE") — these are structural markers in the script, not spoken lines.
-- Stage directions and action descriptions (e.g. "FLAPPY grabs the crystal", "exits the room") — these are not spoken.
-- Duplicate script lines — if the same line appears twice in the script and is spoken once in the audio, do not flag the second occurrence as missing.
 
 REAL issues (flag these):
 - A different word spoken in place of the script word (e.g. "Team" said as "D"). Format: - [MM:SS] SCRIPT: "<exact script text>" / HEARD: "<what was said>" — substituted word
@@ -115,31 +109,21 @@ Every character with more than one line must be individually tracked. Listen to 
 
 This check is not optional and cannot be skipped. Do not output "None" without actively comparing each character's lines against their own profile.
 
-Important exclusions:
-- Do NOT compare a Fake/Clone/Shadow version of a character against the original — they are intentionally different characters with different voices.
-- Do NOT flag pitch variation caused by emotion (e.g. a character sounding higher when shocked vs. calm). Emotional delivery naturally changes pitch and energy. Only flag genuine voice drift: where the base vocal identity — accent, timbre, vocal age, or recording quality — has shifted independent of the emotion being performed.
+Flag every line where a character sounds different from their own earlier lines — even subtle changes count:
+- Format: - [MM:SS] VOICE INCONSISTENCY — <Character Name>: <describe the change, e.g. voice is deeper than at [00:10], accent shifted, rhythm changed, sounds like a different recording>
 
-Flag only genuine voice drift where the underlying vocal identity has changed:
-- Format: - [MM:SS] VOICE INCONSISTENCY — <Character Name>: <describe the change, e.g. accent shifted, timbre became noticeably darker, sounds like a different TTS batch>
-
-Common real causes: accent drift between lines, recording quality change mid-chapter (different background noise, different mic quality), vocal age sounding older or younger than earlier lines, timbre change that persists across multiple lines.
-
-Also check cross-character similarity: if two distinct named characters (e.g. Narrator and a villain) sound indistinguishably similar — same timbre, same accent, same vocal age — flag it. Different characters must have clearly distinguishable voices.
-- Format: - [MM:SS] CROSS-CHARACTER SIMILARITY — <Character A> and <Character B>: <describe why they sound alike>
+Common causes to listen for: pitch level shift, accent drift, vocal age change (sounds older/younger), timbre change (brighter/darker/rougher), rhythm change (faster/slower cadence). Any of these between a character's own lines is a flag.
 
 If singing is present, flag if any character's singing voice sounds disconnected from their speaking voice.
 
 ---
 
 **4. Emotion Mismatch (AI Prosody)**
-Check every line that has an emotional stage direction. Only flag clear, obvious failures — not minor or subtle variations.
-
-The bar for a flag: the emotion delivered must be plainly wrong — clearly missing or clearly replaced by a different emotion. If you need words like "slightly", "somewhat", "almost", "not fully", or "borderline" to describe the mismatch, it is NOT a flag.
-
-- Flag flat/neutral delivery on a line with a strong emotional direction (e.g. a line marked "panicking" delivered completely without panic).
-- Flag the wrong emotion entirely (e.g. a line marked "angry" delivered as cheerful).
-- Flag over-intensity where the script specifically calls for restraint (e.g. a line marked "whisper" delivered loudly).
-- Do NOT flag minor imperfections in degree (e.g. "not quite as annoyed as the script implies" or "slightly less enthusiastic").
+Every line with an emotional stage direction must be checked. This is a strict pass/fail per line.
+- For every line that has a stage direction (e.g. groggy, frustrated, smug, excited, frightened, whispering, urgent), verify the delivery matches it precisely. Flag any mismatch — even a subtle one.
+- Flag flat or neutral delivery on any emotionally charged line — this is always a fail.
+- Flag over-intense delivery where the script calls for restraint (e.g. a quiet or solemn moment delivered with excess energy).
+- Flag prosody that is generically expressive but wrong for the specific emotion written (e.g. "excited" when the script says "nervous").
 
 ---
 
@@ -151,8 +135,6 @@ Cross-reference the acoustic report timestamps as hard evidence, and also flag a
 - Static or hum: background noise, hiss, or electrical hum audible under the voice.
 - Scratchiness, raspiness, or breathiness — especially at high pitch.
 - Volume dropouts: sudden loss of volume or silence mid-word.
-- Word truncation: a word cut off abruptly before completing its final syllable — the ending of the word is missing or clipped.
-- Mispronunciation: a word, character name, or script-specific term spoken with clearly incorrect pronunciation.
 
 For each issue: cite the acoustic report timestamp if available, describe exactly what you hear, and state whether it is distracting for a child listener.
 
@@ -172,14 +154,7 @@ TARGET SCRIPT:
 _LANGUAGE_INSTRUCTIONS = {
     "english": "Language: The script is in English.\n",
     "hindi": (
-        "Language: The script is in Hindi (Devanagari or Hinglish romanisation).\n"
-        "Hindi-specific Script Match rules:\n"
-        "- Ellipsis (…) used within a spoken line as a pause or beat marker is NOT a word — do not flag 'omitted pause' under Script Match. If a dramatic pause is missing from the delivery, note it under Emotion Mismatch instead. However, if an actual content word differs within the same line (e.g. 'कर' spoken where the script says 'लड़'), still flag that word substitution — the ellipsis rule does not suppress real word-level differences.\n"
-        "- The script may contain production/editorial notes (lines starting with 'Note:' or similar comments from the editor). These are not spoken content — do not flag them as missing lines.\n"
-        "- A spoken stutter written in the script (e.g. 'ब-बहुत' or 'I-I') IS spoken content. Flag it as an omitted word if the stutter is not present in the audio.\n"
-        "- Question intonation: if the script marks a line as a question (e.g. ends with '?') but the audio delivers it as a flat statement with no rising intonation, flag this under Emotion Mismatch, not Script Match — the words are the same.\n"
-        "- Romanised Hindi and Devanagari representations of the same word are the same — do not flag a romanised hearing of a Devanagari script word as a substitution.\n"
-        "Hindi vocabulary accessibility (Kid Safe Content): Flag any instance where a highly formal or literary Hindi word is used in the audio where a widely-recognised English loanword would be more natural and understandable for a child audience (e.g. a formal Sanskrit-derived Hindi word used instead of 'distract', 'order', 'team', 'mission'). This is rare — only flag when the word is genuinely likely to be unfamiliar to a young child. Format: - [MM:SS] VOCABULARY: '<word spoken>' — suggest '<simpler alternative>' for child comprehension.\n"
+        "Language: The script is in Hindi.\n"
     ),
 }
 
