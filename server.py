@@ -24,7 +24,7 @@ from threading import Lock
 
 import numpy as np
 import librosa
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from google import genai
@@ -599,11 +599,12 @@ def run_batch_analysis(job: dict, q: sync_queue.Queue) -> None:
         log(f"  Found {len(chapters)} file(s): {', '.join(f['name'] for f in chapters)}")
 
         log("Downloading script from Google Docs...")
+        doc_meta    = drive.files().get(fileId=doc_id, fields="name").execute()
+        doc_name    = doc_meta.get("name", "").strip()
         script_text = _export_google_doc(drive, doc_id)
-        log(f"  Script: {len(script_text):,} characters")
+        log(f"  Script: {doc_name} ({len(script_text):,} characters)")
 
-        story_name = story_override or _story_chapter_from_filename(chapters[0]["name"])[0]
-        log(f"  Story: {story_name}")
+        story_name = story_override or doc_name or _story_chapter_from_filename(chapters[0]["name"])[0]
 
         _ensure_sheet_tab(sheets, sheet_id, story_name)
         _ensure_sheet_tab(sheets, scoring_sheet_id, story_name, headers=[
@@ -807,12 +808,13 @@ async def upload_files(
 
 
 @app.get("/stream/{job_id}")
-async def stream_analysis(job_id: str):
+async def stream_analysis(job_id: str, request: Request):
     if job_id not in _jobs:
         raise HTTPException(status_code=404, detail="Job not found.")
 
     job = _jobs.pop(job_id)
-    _stop_events[job_id] = job["stop"]
+    stop: threading.Event = job["stop"]
+    _stop_events[job_id] = stop
     q: sync_queue.Queue = sync_queue.Queue()
     threading.Thread(target=run_analysis, args=(job, q), daemon=True).start()
 
@@ -832,6 +834,9 @@ async def stream_analysis(job_id: str):
                     else:
                         yield f"event: {event_type}\ndata: {json.dumps({'data': data})}\n\n"
                 except sync_queue.Empty:
+                    if await request.is_disconnected():
+                        print(f"[VQC] Client disconnected — job {job_id} stopped.", flush=True)
+                        break
                     yield ": heartbeat\n\n"
         finally:
             ev = _stop_events.pop(job_id, None)
@@ -876,12 +881,13 @@ async def batch_upload(
 
 
 @app.get("/batch/stream/{job_id}")
-async def batch_stream(job_id: str):
+async def batch_stream(job_id: str, request: Request):
     if job_id not in _jobs:
         raise HTTPException(status_code=404, detail="Job not found.")
 
     job = _jobs.pop(job_id)
-    _stop_events[job_id] = job["stop"]
+    stop: threading.Event = job["stop"]
+    _stop_events[job_id] = stop
     q: sync_queue.Queue = sync_queue.Queue()
     threading.Thread(target=run_batch_analysis, args=(job, q), daemon=True).start()
 
@@ -901,6 +907,9 @@ async def batch_stream(job_id: str):
                     else:
                         yield f"event: {event_type}\ndata: {json.dumps({'data': data})}\n\n"
                 except sync_queue.Empty:
+                    if await request.is_disconnected():
+                        print(f"[VQC-BATCH] Client disconnected — job {job_id} stopped.", flush=True)
+                        break
                     yield ": heartbeat\n\n"
         finally:
             ev = _stop_events.pop(job_id, None)

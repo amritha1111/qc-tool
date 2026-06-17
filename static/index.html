@@ -1039,19 +1039,25 @@
     }
     async function tryLogin() {
       const pw  = document.getElementById('login-password').value;
-      const fd  = new FormData();
-      fd.append('password', pw);
-      const resp = await fetch('/auth/login', { method: 'POST', body: fd });
-      if (resp.ok) {
-        const { token } = await resp.json();
-        localStorage.setItem('auth_token', token);
-        showApp();
-      } else {
-        const err = document.getElementById('login-error');
-        err.textContent = 'Incorrect password.';
+      const err = document.getElementById('login-error');
+      err.classList.remove('visible');
+      try {
+        const fd   = new FormData();
+        fd.append('password', pw);
+        const resp = await fetch('/auth/login', { method: 'POST', body: fd });
+        if (resp.ok) {
+          const { token } = await resp.json();
+          localStorage.setItem('auth_token', token);
+          showApp();
+        } else {
+          err.textContent = 'Incorrect password.';
+          err.classList.add('visible');
+          document.getElementById('login-password').value = '';
+          document.getElementById('login-password').focus();
+        }
+      } catch (e) {
+        err.textContent = 'Server unreachable. Please try again.';
         err.classList.add('visible');
-        document.getElementById('login-password').value = '';
-        document.getElementById('login-password').focus();
       }
     }
     document.getElementById('login-btn').addEventListener('click', tryLogin);
@@ -1059,13 +1065,17 @@
       if (e.key === 'Enter') tryLogin();
     });
     (async () => {
-      const token = localStorage.getItem('auth_token') || '';
-      const resp  = await fetch('/auth/check?token=' + encodeURIComponent(token));
-      const { valid } = await resp.json();
-      if (valid) {
-        showApp();
-      } else {
-        localStorage.removeItem('auth_token');
+      try {
+        const token = localStorage.getItem('auth_token') || '';
+        const resp  = await fetch('/auth/check?token=' + encodeURIComponent(token));
+        const { valid } = await resp.json();
+        if (valid) {
+          showApp();
+        } else {
+          localStorage.removeItem('auth_token');
+          setTimeout(() => document.getElementById('login-password').focus(), 50);
+        }
+      } catch (e) {
         setTimeout(() => document.getElementById('login-password').focus(), 50);
       }
     })();
