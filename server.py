@@ -12,7 +12,6 @@ Then open http://localhost:8000
 
 import asyncio
 import json
-import multiprocessing as _mp
 import os
 import queue as sync_queue
 import re
@@ -213,6 +212,28 @@ def _write_prompts(data: dict) -> None:
 _jobs: dict[str, dict] = {}
 _stop_events: dict[str, threading.Event] = {}
 
+# ── Gemini concurrency guard ───────────────────────────────────────────────────
+# Limits simultaneous generate_content calls so concurrent users don't collide
+# on API quota.  Upload calls are cheaper and are retried independently.
+_GEMINI_SEM = threading.Semaphore(4)   # up to 4 concurrent generate_content calls
+_RETRYABLE = ("429", "quota", "rate limit", "resource exhausted", "503", "unavailable", "500", "internal server")
+
+
+def _retry(fn, log_fn: callable, label: str, max_retries: int = 3):
+    """Call fn() and retry with exponential backoff on transient Gemini errors."""
+    for attempt in range(max_retries):
+        try:
+            return fn()
+        except Exception as exc:
+            err = str(exc).lower()
+            if any(p in err for p in _RETRYABLE) and attempt < max_retries - 1:
+                wait = 5 * (2 ** attempt)   # 5 s, 10 s, 20 s
+                log_fn(f"  {label} — transient error, retrying in {wait}s "
+                       f"(attempt {attempt + 1}/{max_retries}): {exc}")
+                time.sleep(wait)
+            else:
+                raise
+
 # ── Analysis helpers ──────────────────────────────────────────────────────────
 
 
@@ -220,42 +241,11 @@ def fmt_ts(seconds: float) -> str:
     return f"[{int(seconds // 60):02d}:{int(seconds % 60):02d}]"
 
 
-def _acoustic_worker(audio_path: str, result_queue: "_mp.Queue") -> None:
-    """Subprocess target — runs librosa/numba in its own GIL so the event loop stays free."""
-    try:
-        def _noop(*_): pass
-        result = extract_quality_features(audio_path, _noop, _noop)
-        result_queue.put(("ok", result))
-    except Exception as exc:
-        result_queue.put(("error", str(exc)))
-
 
 def extract_quality_features(audio_path: str, log_fn, progress_fn, stop: threading.Event | None = None) -> str:
-    if stop is not None:
-        # librosa.pyin uses numba which holds the GIL and freezes the event loop.
-        # Running in a subprocess gives it an independent GIL.
-        ctx = _mp.get_context("spawn")
-        result_q = ctx.Queue()
-        proc = ctx.Process(target=_acoustic_worker, args=(audio_path, result_q))
-        proc.start()
-        log_fn("Running acoustic analysis...")
-        while proc.is_alive():
-            if stop.is_set():
-                proc.terminate()
-                proc.join(timeout=3)
-                if proc.is_alive():
-                    proc.kill()
-                return ""
-            time.sleep(0.5)
-        proc.join()
-        try:
-            tag, data = result_q.get_nowait()
-        except sync_queue.Empty:
-            raise RuntimeError("Acoustic subprocess returned no result.")
-        if tag == "ok":
-            return data
-        raise RuntimeError(data)
-
+    # Runs inline in the caller's background thread — no subprocess needed.
+    # numpy/numba release the GIL for heavy computation so concurrent analyses
+    # don't block each other or the async event loop.
     def _stopped() -> bool:
         return stop is not None and stop.is_set()
 
@@ -471,7 +461,10 @@ def run_analysis(job: dict, q: sync_queue.Queue) -> None:
         if stop.is_set(): return
         acoustic_report = extract_quality_features(audio_path, log, progress, stop)
         if stop.is_set(): return
-        audio_ref = upload_to_gemini(audio_path, log, client)
+        audio_ref = _retry(
+            lambda: upload_to_gemini(audio_path, log, client),
+            log, "Gemini upload",
+        )
 
         try:
             final_prompt = job["prompt"].format(
@@ -486,16 +479,15 @@ def run_analysis(job: dict, q: sync_queue.Queue) -> None:
             ) from exc
 
         log(f"Calling {model_id} — this may take a minute...")
-        response = client.models.generate_content(
-            model=model_id,
-            contents=[
-                types.Part.from_uri(
-                    file_uri=audio_ref.uri,
-                    mime_type=audio_ref.mime_type,
-                ),
-                types.Part.from_text(text=final_prompt),
-            ],
-        )
+        contents = [
+            types.Part.from_uri(file_uri=audio_ref.uri, mime_type=audio_ref.mime_type),
+            types.Part.from_text(text=final_prompt),
+        ]
+        with _GEMINI_SEM:
+            response = _retry(
+                lambda: client.models.generate_content(model=model_id, contents=contents),
+                log, f"generate_content ({model_id})",
+            )
 
         client.files.delete(name=audio_ref.name)
         log("Complete. Uploaded file deleted from Gemini server.")
@@ -807,7 +799,10 @@ def run_batch_analysis(job: dict, q: sync_queue.Queue) -> None:
                     break
 
                 log(f"[{idx+1}/{total}] {chapter_name} — uploading to Gemini...")
-                audio_ref = upload_to_gemini(audio_path, log, client)
+                audio_ref = _retry(
+                    lambda: upload_to_gemini(audio_path, log, client),
+                    log, f"Gemini upload {chapter_name}",
+                )
 
                 ch_num        = _chapter_num_from_filename(ch_meta["name"])
                 ch_script     = chapter_scripts.get(ch_num, script_text)
@@ -826,16 +821,15 @@ def run_batch_analysis(job: dict, q: sync_queue.Queue) -> None:
                     raise ValueError(f"Prompt missing placeholder: {{{exc}}}")
 
                 log(f"[{idx+1}/{total}] {chapter_name} — calling {model_id}...")
-                response = client.models.generate_content(
-                    model=model_id,
-                    contents=[
-                        types.Part.from_uri(
-                            file_uri=audio_ref.uri,
-                            mime_type=audio_ref.mime_type,
-                        ),
-                        types.Part.from_text(text=final_prompt),
-                    ],
-                )
+                contents = [
+                    types.Part.from_uri(file_uri=audio_ref.uri, mime_type=audio_ref.mime_type),
+                    types.Part.from_text(text=final_prompt),
+                ]
+                with _GEMINI_SEM:
+                    response = _retry(
+                        lambda: client.models.generate_content(model=model_id, contents=contents),
+                        log, f"generate_content {chapter_name}",
+                    )
                 client.files.delete(name=audio_ref.name)
 
                 rows = _parse_report_rows(response.text, story_name, chapter_name, model_id)
