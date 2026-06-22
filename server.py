@@ -674,6 +674,51 @@ def _story_chapter_from_filename(filename: str):
     return stem, stem
 
 
+def _chapter_num_from_filename(filename: str) -> int | None:
+    m = re.search(r"CHAPTER\s+(\d+)", filename, re.IGNORECASE)
+    return int(m.group(1)) if m else None
+
+
+def _split_script_by_chapter(script_text: str) -> dict:
+    """Split a full script into per-chapter sections keyed by chapter number.
+
+    Works with both plain-text Google Docs exports and markdown files.
+    Matches headings like:
+      CHAPTER 1 — "TITLE"        (plain text export)
+      # **CHAPTER 1 — "TITLE"**  (markdown)
+
+    If content exists before the first heading (e.g. the script begins directly
+    with chapter 1 content without an explicit heading), it is assigned to the
+    chapter number immediately before the first matched heading number.
+
+    Returns {1: "<chapter 1 text>", 2: "<chapter 2 text>", ...}
+    Returns empty dict if no chapter headings are found at all.
+    """
+    pattern = re.compile(
+        r"^[ \t]*(?:#[ \t]+)?(?:\*+)?CHAPTER\s+(\d+)",
+        re.MULTILINE | re.IGNORECASE,
+    )
+    matches = list(pattern.finditer(script_text))
+    if not matches:
+        return {}
+
+    chapters = {}
+
+    preamble = script_text[: matches[0].start()].strip()
+    if preamble:
+        first_num = int(matches[0].group(1))
+        orphan_num = max(1, first_num - 1)
+        chapters[orphan_num] = preamble
+
+    for i, m in enumerate(matches):
+        num   = int(m.group(1))
+        start = m.start()
+        end   = matches[i + 1].start() if i + 1 < len(matches) else len(script_text)
+        chapters[num] = script_text[start:end].strip()
+
+    return chapters
+
+
 # ── Batch analysis ────────────────────────────────────────────────────────────
 
 
@@ -712,10 +757,14 @@ def run_batch_analysis(job: dict, q: sync_queue.Queue) -> None:
         log(f"  Found {len(chapters)} file(s): {', '.join(f['name'] for f in chapters)}")
 
         log("Downloading script from Google Docs...")
-        doc_meta    = drive.files().get(fileId=doc_id, fields="name").execute()
-        doc_name    = doc_meta.get("name", "").strip()
-        script_text = _export_google_doc(drive, doc_id)
-        log(f"  Script: {doc_name} ({len(script_text):,} characters)")
+        doc_meta       = drive.files().get(fileId=doc_id, fields="name").execute()
+        doc_name       = doc_meta.get("name", "").strip()
+        script_text    = _export_google_doc(drive, doc_id)
+        chapter_scripts = _split_script_by_chapter(script_text)
+        if chapter_scripts:
+            log(f"  Script: {doc_name} ({len(script_text):,} chars) — split into chapters: {sorted(chapter_scripts.keys())}")
+        else:
+            log(f"  Script: {doc_name} ({len(script_text):,} chars) — WARNING: no chapter headings found, full script will be used for all chapters")
 
         story_name = story_override or doc_name or _story_chapter_from_filename(chapters[0]["name"])[0]
 
@@ -760,10 +809,17 @@ def run_batch_analysis(job: dict, q: sync_queue.Queue) -> None:
                 log(f"[{idx+1}/{total}] {chapter_name} — uploading to Gemini...")
                 audio_ref = upload_to_gemini(audio_path, log, client)
 
+                ch_num        = _chapter_num_from_filename(ch_meta["name"])
+                ch_script     = chapter_scripts.get(ch_num, script_text)
+                if ch_num and ch_num in chapter_scripts:
+                    log(f"[{idx+1}/{total}] {chapter_name} — using script section for chapter {ch_num}")
+                else:
+                    log(f"[{idx+1}/{total}] {chapter_name} — no matching chapter section found, using full script")
+
                 try:
                     final_prompt = prompt_tmpl.format(
                         acoustic_report=acoustic_report,
-                        script_text=script_text,
+                        script_text=ch_script,
                         language_instruction=_build_language_instruction(job.get("language", "english")),
                     )
                 except KeyError as exc:
