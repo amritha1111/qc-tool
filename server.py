@@ -41,7 +41,7 @@ SERVICE_ACCOUNT_PATH = Path(__file__).resolve().parent / "handy-compass-481307-i
 GOOGLE_SCOPES     = [
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/spreadsheets",
-]
+]   
 
 DEFAULT_PROMPT = """\
 You are a strict, objective Quality Control reviewer for children's audio content.
