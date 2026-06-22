@@ -216,7 +216,11 @@ _stop_events: dict[str, threading.Event] = {}
 # Limits simultaneous generate_content calls so concurrent users don't collide
 # on API quota.  Upload calls are cheaper and are retried independently.
 _GEMINI_SEM = threading.Semaphore(4)   # up to 4 concurrent generate_content calls
-_RETRYABLE = ("429", "quota", "rate limit", "resource exhausted", "503", "unavailable", "500", "internal server")
+_RETRYABLE = (
+    "429", "quota", "rate limit", "resource exhausted",
+    "503", "unavailable", "500", "internal server",
+    "ssl", "eof", "connection", "timeout", "reset", "broken pipe",
+)
 
 
 def _retry(fn, log_fn: callable, label: str, max_retries: int = 3):
@@ -780,7 +784,10 @@ def run_batch_analysis(job: dict, q: sync_queue.Queue) -> None:
             log(f"[{idx+1}/{total}] {chapter_name} — downloading audio...")
 
             suffix     = Path(ch_meta["name"]).suffix or ".mp3"
-            audio_path = _download_drive_file(drive, ch_meta["id"], suffix)
+            audio_path = _retry(
+                lambda: _download_drive_file(drive, ch_meta["id"], suffix),
+                log, f"Drive download {chapter_name}",
+            )
 
             try:
                 log(f"[{idx+1}/{total}] {chapter_name} — acoustic analysis...")
