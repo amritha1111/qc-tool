@@ -621,6 +621,26 @@ def _parse_report_rows(report_text: str, story: str, chapter: str, model: str) -
             cl = content.lower().rstrip(".")
             if not cl or cl == "none" or cl.startswith("issues identified"):
                 continue
+            # Drop any bullet the model itself retracted or flagged as non-issue
+            if "re-evaluating" in cl or "false flag" in cl:
+                continue
+            # Drop bullets whose only stated reason is a punctuation/formatting diff
+            if re.search(
+                r"—\s*(omitted punctuation|substituted punctuation|omitted ellipsis"
+                r"|omitted stage direction|omitted script section header)\s*$",
+                content, re.IGNORECASE,
+            ):
+                continue
+            # Drop Script Match bullets where SCRIPT and HEARD words are identical
+            # after stripping punctuation (model flagged a formatting difference only)
+            if cat == "Script Match":
+                sm = re.search(r'SCRIPT:\s*"([^"]*)"', content)
+                hm = re.search(r'HEARD:\s*"([^"]*)"', content)
+                if sm and hm:
+                    def _w(t):
+                        return re.sub(r"[^\w\s]", "", t).lower().split()
+                    if _w(sm.group(1)) == _w(hm.group(1)):
+                        continue
             ts_m      = re.search(r"\[(\d{1,2}:\d{2})\]", content)
             timestamp = ts_m.group(1) if ts_m else ""
             rows.append([story, chapter, cat, timestamp, content, model, run_date])
