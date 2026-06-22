@@ -163,7 +163,7 @@ ACOUSTIC QUALITY REPORT:
 ---
 
 TARGET SCRIPT:
-{script_text}\
+{script_text}
 """
 
 # ── Language instructions ─────────────────────────────────────────────────────
@@ -221,6 +221,10 @@ _RETRYABLE = (
     "503", "unavailable", "500", "internal server",
     "ssl", "eof", "connection", "timeout", "reset", "broken pipe",
 )
+
+# Max 2 concurrent librosa analyses — prevents GIL saturation from starving
+# the asyncio event loop (which drops SSE connections under 4+ simultaneous users).
+_ACOUSTIC_SEM = threading.Semaphore(2)
 
 
 def _retry(fn, log_fn: callable, label: str, max_retries: int = 3):
@@ -463,7 +467,8 @@ def run_analysis(job: dict, q: sync_queue.Queue) -> None:
 
         script_text = open(script_path, encoding="utf-8").read()
         if stop.is_set(): return
-        acoustic_report = extract_quality_features(audio_path, log, progress, stop)
+        with _ACOUSTIC_SEM:
+            acoustic_report = extract_quality_features(audio_path, log, progress, stop)
         if stop.is_set(): return
         audio_ref = _retry(
             lambda: upload_to_gemini(audio_path, log, client),
@@ -820,7 +825,8 @@ def run_batch_analysis(job: dict, q: sync_queue.Queue) -> None:
                         progress(off + frac * sc)
                     return _p
 
-                acoustic_report = extract_quality_features(audio_path, log, make_prog(), stop)
+                with _ACOUSTIC_SEM:
+                    acoustic_report = extract_quality_features(audio_path, log, make_prog(), stop)
                 if stop.is_set():
                     log("Client disconnected — stopping batch.")
                     break
